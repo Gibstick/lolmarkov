@@ -3,6 +3,7 @@ import asyncio
 import configparser
 import json
 import sqlite3
+import traceback
 from datetime import timezone
 
 import discord
@@ -63,7 +64,7 @@ class MyClient(discord.Client):
         last_count = int(
             next(self._conn.execute("SELECT COUNT(*) FROM messages;"))[0])
 
-        while not self.is_closed:
+        while not self.is_closed():
             self._conn.commit()
             for row in self._conn.execute("SELECT COUNT(*) FROM messages;"):
                 count = int(row[0])
@@ -85,7 +86,7 @@ class MyClient(discord.Client):
 
     async def archive_permission(self, channel):
         """Return if we have read and history permission for a Channel."""
-        perms = channel.permissions_for(channel.server.me)
+        perms = channel.permissions_for(channel.guild.me)
         return perms.read_messages and perms.read_message_history
 
     async def message_tuple_generator(self, update=False):
@@ -118,20 +119,18 @@ class MyClient(discord.Client):
                   WHERE channel_id = ?""", (int(channel.id), )):
                     before = discord.Object(row[0])
 
-            async for message in self.logs_from(
-                    channel, before=before, after=after, limit=999999999):
+            async for message in channel.history(before=before,
+                                                 after=after,
+                                                 limit=None):
 
-                # We want a SQL NULL instead of a string "[]"
-                if message.attachments:
-                    attachments = json.dumps(message.attachments)
-                else:
-                    attachments = None
+                # TODO: fix attachments
+                attachments = None
                 # Get UTC unix timestamp from a naive datetime object
-                ts = message.timestamp.replace(tzinfo=timezone.utc).timestamp()
-                yield ((int(message.id), ts,
-                        int(message.author.id), message.author.name,
-                        int(message.channel.id), message.content,
-                        message.clean_content, attachments),
+                ts = message.created_at.replace(
+                    tzinfo=timezone.utc).timestamp()
+                yield ((int(message.id), ts, int(message.author.id),
+                        message.author.name, int(message.channel.id),
+                        message.content, message.clean_content, attachments),
                        (message.author.id, message.author.name,
                         message.author.display_name,
                         message.author.discriminator))
@@ -175,6 +174,8 @@ class MyClient(discord.Client):
             self._conn.commit()
 
             print("Done!")
+        except Exception as e:
+            print(e)
         finally:
             self.commit_task.cancel()
             await self.logout()
@@ -201,8 +202,10 @@ def try_config(config, heading, key):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-c", "--config", help="Config file path", default="config.ini")
+    parser.add_argument("-c",
+                        "--config",
+                        help="Config file path",
+                        default="config.ini")
     args = parser.parse_args()
 
     config = configparser.ConfigParser()
