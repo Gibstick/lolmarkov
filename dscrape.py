@@ -8,6 +8,8 @@ from datetime import timezone
 
 import discord
 
+import util
+
 # See https://discordpy.readthedocs.io/en/v0.16.12/api.html#user
 USERS_TABLE_DDL = \
     """
