@@ -82,6 +82,8 @@ class MyClient(discord.Client):
     async def channel_tuple_generator(self):
         """Yields tuples to be inserted into the channels table."""
         for channel in self.get_all_channels():
+            if channel.type != discord.ChannelType.text:
+                continue
             yield (int(channel.id), channel.name)
 
     async def archive_permission(self, channel):
@@ -102,6 +104,9 @@ class MyClient(discord.Client):
                     if await self.archive_permission(c))
 
         async for channel in channels:
+            if channel.type != discord.ChannelType.text:
+                continue
+
             print("Archiving channel {}".format(channel.name))
 
             before, after = None, None
