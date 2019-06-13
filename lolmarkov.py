@@ -51,11 +51,22 @@ class MarkovCog(commands.Cog):
         self._conn = sqlite3.connect("file:./discord_archive.sqlite3?mode=ro",
                                      uri=True)
         self._model = None
+        self._model_attrib = None
         self._user_converter = commands.UserConverter()
 
     @commands.Cog.listener()
     async def on_ready(self):
         print("Ready!")
+
+
+    async def set_name(self, ctx, member):
+        """Change nickname to indicate that current model is for member."""
+        me = ctx.guild.me
+        basename = me.name
+        model_attrib = f"{member.name}#{member.discriminator}"
+        self._model_attrib = model_attrib
+        await me.edit(nick=f"{basename} ({model_attrib})")
+
 
     @commands.command()
     async def switch(self, ctx, *, arg: str):
@@ -75,6 +86,7 @@ class MarkovCog(commands.Cog):
             return
 
         self._model = new_model
+        await self.set_name(ctx, member)
         await ctx.send(
             f"Switched model to {member.name}#{member.discriminator}")
 
@@ -83,7 +95,8 @@ class MarkovCog(commands.Cog):
         if isinstance(error, commands.BadArgument):
             await ctx.send(str(error))
         else:
-            await ctx.send("Unable to switch data set.\n{}".format(str(error)))
+            await ctx.send("Unable to switch data set.")
+            print(error)
         await ctx.message.add_reaction("❌")
 
     @commands.command()
@@ -106,7 +119,7 @@ class MarkovCog(commands.Cog):
                 sentence = None
 
         if sentence:
-            await ctx.send(sentence)
+            await ctx.send(f"{sentence}\n- {self._model_attrib}")
         else:
             await ctx.message.add_reaction("❌")
             await ctx.send("Unable to get sentence.", delete_after=3)
