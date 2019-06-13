@@ -1,4 +1,6 @@
 import argparse
+import asyncio
+import concurrent.futures
 import configparser
 import functools
 import aiosqlite
@@ -12,20 +14,6 @@ from async_lru import alru_cache
 from discord.ext import commands
 
 import util
-
-
-@alru_cache(maxsize=32)
-async def create_model(author_id: int, conn):
-    cursor = await conn.execute(
-        "SELECT content FROM messages WHERE author_id is ?",
-        (author_id, ))
-    messages = await cursor.fetchall()
-
-    if len(messages) < 25:
-        return None
-
-    return markovify.NewlineText("\n".join(m[0] for m in messages))
-
 
 DuckUser = namedtuple("DuckUser", ["id", "name", "discriminator"])
 
@@ -52,6 +40,7 @@ class MarkovCog(commands.Cog):
         self._model = None
         self._model_attrib = None
         self._user_converter = commands.UserConverter()
+        self._pool = concurrent.futures.ProcessPoolExecutor()
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -73,6 +62,20 @@ class MarkovCog(commands.Cog):
         self._model_attrib = model_attrib
         await me.edit(nick=f"{basename} ({model_attrib})")
 
+    @alru_cache(maxsize=32)
+    async def create_model(self, author_id: int, conn):
+        cursor = await conn.execute(
+            "SELECT content FROM messages WHERE author_id is ?", (author_id, ))
+        messages = await cursor.fetchall()
+
+        if len(messages) < 25:
+            return None
+
+        loop = asyncio.get_running_loop()
+        model = await loop.run_in_executor(self._pool, markovify.NewlineText,
+                                           ("\n".join(m[0] for m in messages)))
+        return model
+
     @commands.command()
     async def switch(self, ctx, *, arg: str):
         """Switch to a model for a different user."""
@@ -84,7 +87,7 @@ class MarkovCog(commands.Cog):
             member = await database_user(self._conn, arg)
 
         async with ctx.typing():
-            new_model = await create_model(member.id, self._conn)
+            new_model = await self.create_model(member.id, self._conn)
 
         if new_model is None:
             await ctx.send(f"Not enough data for user {member.name}")
@@ -113,14 +116,21 @@ class MarkovCog(commands.Cog):
             await ctx.send("No model is active.")
             return
 
-        TRIES = 500
+        TRIES = 20
+        MAX_OVERLAP_RATIO = 0.6
         async with ctx.typing():
             try:
                 if start:
                     sentence = self._model.make_sentence_with_start(
-                        start, tries=TRIES, strict=False)
+                        start,
+                        tries=TRIES,
+                        strict=False,
+                        max_overlap_ratio=MAX_OVERLAP_RATIO)
                 else:
-                    sentence = self._model.make_sentence(start, tries=TRIES)
+                    sentence = self._model.make_sentence(
+                        start,
+                        tries=TRIES,
+                        max_overlap_ratio=MAX_OVERLAP_RATIO)
             except KeyError:
                 sentence = None
 
