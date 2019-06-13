@@ -1,19 +1,20 @@
 import argparse
 import configparser
 import functools
-import sqlite3
+import sqlite3 #TODO: aiosqlite3
 import sys
+from collections import namedtuple
 
 import discord
 import markovify
+from discord.ext import commands
 
 import util
 
-from discord.ext import commands
-
 
 @functools.lru_cache(maxsize=32)
-def create_model(author_id: int, conn):
+async def create_model(author_id: int, conn):
+    # TODO: async
     c = conn.cursor()
 
     messages = c.execute("SELECT content FROM messages WHERE author_id is ?",
@@ -25,22 +26,50 @@ def create_model(author_id: int, conn):
     return markovify.NewlineText("\n".join(m[0] for m in messages))
 
 
+DuckUser = namedtuple("DuckUser", ["id", "name", "discriminator"])
+
+
+async def database_user(conn, argument):
+    """"Look up a user in the database and return a NamedTuple mimicking a discord.User"""
+    c = conn.cursor()
+    users = c.execute(
+        "SELECT id, username, discriminator FROM users WHERE username||'#'||discriminator == ? LIMIT 1",
+        (argument, )).fetchall()
+
+    if not users:
+        raise commands.CommandError(
+            f"User {argument} not found in data set.")
+
+    user = users[0]
+    member = DuckUser(id=user[0], name=user[1], discriminator=user[2])
+    return member
+
+
 class MarkovCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._conn = sqlite3.connect("file:./discord_archive.sqlite3?mode=ro",
                                      uri=True)
         self._model = None
+        self._user_converter = commands.UserConverter()
 
     @commands.Cog.listener()
     async def on_ready(self):
         print("Ready!")
 
     @commands.command()
-    async def switch(self, ctx, *, member: discord.User = None):
+    async def switch(self, ctx, *, arg: str):
         """Switch to a model for a different user."""
+        # Due to the complicated fallback logic and the shared database
+        # connection, we convert the argmuent manually.
+        try:
+            member = await self._user_converter.convert(ctx, arg)
+        except commands.CommandError:
+            member = await database_user(self._conn, arg)
+
         async with ctx.typing():
-            new_model = create_model(member.id, self._conn)
+            new_model = await create_model(member.id, self._conn)
+
         if new_model is None:
             await ctx.send(f"Not enough data for user {member.name}")
             return
@@ -54,8 +83,7 @@ class MarkovCog(commands.Cog):
         if isinstance(error, commands.BadArgument):
             await ctx.send(str(error))
         else:
-            print(error)
-            await ctx.send(f"Unable to switch data set.")
+            await ctx.send("Unable to switch data set.\n{}".format(str(error)))
         await ctx.message.add_reaction("❌")
 
     @commands.command()
@@ -70,9 +98,8 @@ class MarkovCog(commands.Cog):
         async with ctx.typing():
             try:
                 if start:
-                    sentence = self._model.make_sentence_with_start(start,
-                                                                    tries=TRIES,
-                                                                    strict=False)
+                    sentence = self._model.make_sentence_with_start(
+                        start, tries=TRIES, strict=False)
                 else:
                     sentence = self._model.make_sentence(start, tries=TRIES)
             except KeyError:
