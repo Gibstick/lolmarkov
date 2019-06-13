@@ -56,6 +56,10 @@ class MarkovCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
+        if self._model_attrib is None:
+            print("Resetting nickname(s)...")
+            for guild in self.bot.guilds:
+                await guild.me.edit(nick=None)
         print("Ready!")
 
 
