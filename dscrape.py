@@ -186,25 +186,6 @@ class MyClient(discord.Client):
             await self.logout()
 
 
-def try_config(config, heading, key):
-    """Attempt to extract config[heading][key], with error handling.
-
-    This function wraps config access with a try-catch to print out informative
-    error messages and then exit."""
-    try:
-        section = config[heading]
-    except KeyError:
-        exit("Missing config section [{}]".format(heading))
-
-    try:
-        value = section[key]
-    except KeyError:
-        exit("Missing config key '{}' under section '[{}]'".format(
-            key, heading))
-
-    return value
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-c",
@@ -215,7 +196,7 @@ def main():
 
     config = configparser.ConfigParser()
     config.read(args.config)
-    token = try_config(config, "MAIN", "Token")
+    token = util.try_config(config, "MAIN", "Token")
 
     client = MyClient()
     client.run(token)
