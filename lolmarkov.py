@@ -125,21 +125,29 @@ class MarkovCog(commands.Cog):
             await ctx.send("No model is active.")
             return
 
-        TRIES = 20
+        ATTEMPTS = 20
+        ATTEMPTS_PER_ITER = 4
         MAX_OVERLAP_RATIO = 0.6
+        assert(ATTEMPTS % ATTEMPTS_PER_ITER == 0)
+
         async with ctx.typing():
             try:
-                if start:
-                    sentence = self._model.make_sentence_with_start(
-                        start,
-                        tries=TRIES,
-                        strict=False,
-                        max_overlap_ratio=MAX_OVERLAP_RATIO)
-                else:
-                    sentence = self._model.make_sentence(
-                        start,
-                        tries=TRIES,
-                        max_overlap_ratio=MAX_OVERLAP_RATIO)
+                for i in range(ATTEMPTS//ATTEMPTS_PER_ITER):
+                    if start:
+                        sentence = self._model.make_sentence_with_start(
+                            start,
+                            tries=ATTEMPTS_PER_ITER,
+                            strict=False,
+                            max_overlap_ratio=MAX_OVERLAP_RATIO)
+                    else:
+                        sentence = self._model.make_sentence(
+                            start,
+                            tries=ATTEMPTS_PER_ITER,
+                            max_overlap_ratio=MAX_OVERLAP_RATIO)
+                    if sentence:
+                        break
+                    else:
+                        asyncio.sleep(0)
             except KeyError:
                 sentence = None
 
