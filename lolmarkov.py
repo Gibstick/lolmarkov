@@ -41,7 +41,27 @@ class MarkovCog(commands.Cog):
         self._model_attrib = None
         self._user_converter = commands.UserConverter()
         self._pool = concurrent.futures.ProcessPoolExecutor()
+    def last_replace(s, old, new):
+        li = s.rsplit(old, 1)
+        return new.join(li)
 
+    def UWU(msg):
+        vowels = ['a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U']
+        faces=["(・`ω´・)",";;w;;","owo","UwU",">w<","^w^"];
+        msg = msg.replace('L', 'W').replace('l', 'w')
+        msg = msg.replace('R', 'W').replace('r', 'w')
+
+        msg = last_replace(msg, '!', '! {}'.format(random.choice(faces)))
+        msg = last_replace(msg, '?', '? owo')
+        msg = last_replace(msg, '.', '. {}'.format(random.choice(faces)))
+
+        for v in vowels:
+            if 'n{}'.format(v) in msg:
+                msg = msg.replace('n{}'.format(v), 'ny{}'.format(v))
+            if 'N{}'.format(v) in msg:
+                msg = msg.replace('N{}'.format(v), 'N{}{}'.format('Y' if v.isupper() else 'y', v))
+
+        return msg
     @commands.Cog.listener()
     async def on_ready(self):
         if self._conn is None:
@@ -109,7 +129,7 @@ class MarkovCog(commands.Cog):
         await ctx.message.add_reaction("❌")
 
     @commands.command()
-    async def talk(self, ctx, *, start: str = None):
+    async def talk(self, ctx, *, start: str = None,):
         """Get one sentence from the model, with optional start parameter."""
         if self._model is None:
             await ctx.message.add_reaction("❌")
@@ -135,6 +155,7 @@ class MarkovCog(commands.Cog):
                 sentence = None
 
         if sentence:
+            sentence = UWU(sentence)
             await ctx.send(f"{sentence}\n`{self._model_attrib}`")
         else:
             await ctx.message.add_reaction("❌")
