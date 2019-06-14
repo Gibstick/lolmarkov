@@ -119,19 +119,18 @@ class MarkovCog(commands.Cog):
         TRIES = 20
         MAX_OVERLAP_RATIO = 0.6
         async with ctx.typing():
-            if start:
-                fn = functools.partial(self._model.make_sentence_with_start,
-                                       start,
-                                       tries=TRIES,
-                                       strict=False,
-                                       max_overlap_ratio=MAX_OVERLAP_RATIO)
-            else:
-                fn = functools.partial(self._model.make_sentence,
-                                       start,
-                                       tries=TRIES,
-                                       max_overlap_ratio=MAX_OVERLAP_RATIO)
             try:
-                sentence = await self.bot.loop.run_in_executor(self._pool, fn)
+                if start:
+                    sentence = self._model.make_sentence_with_start(
+                        start,
+                        tries=TRIES,
+                        strict=False,
+                        max_overlap_ratio=MAX_OVERLAP_RATIO)
+                else:
+                    sentence = self._model.make_sentence(
+                        start,
+                        tries=TRIES,
+                        max_overlap_ratio=MAX_OVERLAP_RATIO)
             except KeyError:
                 sentence = None
 
