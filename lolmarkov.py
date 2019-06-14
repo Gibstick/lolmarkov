@@ -129,7 +129,7 @@ class MarkovCog(commands.Cog):
         await ctx.message.add_reaction("❌")
 
     @commands.command()
-    async def talk(self, ctx, *, start: str = None,):
+    async def talk(self, ctx, *, start: str = None):
         """Get one sentence from the model, with optional start parameter."""
         if self._model is None:
             await ctx.message.add_reaction("❌")
