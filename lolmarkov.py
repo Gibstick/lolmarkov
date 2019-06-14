@@ -20,10 +20,10 @@ DuckUser = namedtuple("DuckUser", ["id", "name", "discriminator"])
 
 async def database_user(conn, argument):
     """"Look up a user in the database and return a NamedTuple mimicking a discord.User"""
-    cursor = await c.execute(
+    cursor = await conn.execute(
         "SELECT id, username, discriminator FROM users WHERE username||'#'||discriminator == ? LIMIT 1",
         (argument, ))
-    users = await cursor.fetchone()
+    users = await cursor.fetchall()
 
     if not users:
         raise commands.CommandError(f"User {argument} not found in data set.")
@@ -119,18 +119,19 @@ class MarkovCog(commands.Cog):
         TRIES = 20
         MAX_OVERLAP_RATIO = 0.6
         async with ctx.typing():
+            if start:
+                fn = functools.partial(self._model.make_sentence_with_start,
+                                       start,
+                                       tries=TRIES,
+                                       strict=False,
+                                       max_overlap_ratio=MAX_OVERLAP_RATIO)
+            else:
+                fn = functools.partial(self._model.make_sentence,
+                                       start,
+                                       tries=TRIES,
+                                       max_overlap_ratio=MAX_OVERLAP_RATIO)
             try:
-                if start:
-                    sentence = self._model.make_sentence_with_start(
-                        start,
-                        tries=TRIES,
-                        strict=False,
-                        max_overlap_ratio=MAX_OVERLAP_RATIO)
-                else:
-                    sentence = self._model.make_sentence(
-                        start,
-                        tries=TRIES,
-                        max_overlap_ratio=MAX_OVERLAP_RATIO)
+                sentence = await self.bot.loop.run_in_executor(self._pool, fn)
             except KeyError:
                 sentence = None
 
