@@ -64,7 +64,7 @@ class MarkovCog(commands.Cog):
         if len(member.name) > available_length:
             member_name = f"{member.name[:available_length-3]}..."
         else:
-            member_name = member_name
+            member_name = member.name
 
         trimmed_member = f"{member_name}#{member.discriminator}"
         self._model_attrib = f"{member.name}#{member.discriminator}"
