@@ -58,9 +58,18 @@ class MarkovCog(commands.Cog):
         """Change nickname to indicate that current model is for member."""
         me = ctx.guild.me
         basename = me.name
-        model_attrib = f"{member.name}#{member.discriminator}"
-        self._model_attrib = model_attrib
-        await me.edit(nick=f"{basename} ({model_attrib})")
+
+        # Basename + username + discriminator + # + spaces and parens
+        available_length = 32 - len(basename) - 8
+        if len(member.name) > available_length:
+            member_name = f"{member.name[:available_length-3]}..."
+        else:
+            member_name = member_name
+
+        trimmed_member = f"{member_name}#{member.discriminator}"
+        self._model_attrib = f"{member.name}#{member.discriminator}"
+
+        await me.edit(nick=f"{basename} ({trimmed_member})")
 
     @alru_cache(maxsize=32)
     async def create_model(self, author_id: int, conn):
