@@ -3,11 +3,13 @@ import asyncio
 import concurrent.futures
 import configparser
 import functools
-import aiosqlite
+import json
+import os
 import sys
 import traceback
 from collections import namedtuple
 
+import aiosqlite
 import discord
 import markovify
 from async_lru import alru_cache
@@ -71,19 +73,30 @@ class MarkovCog(commands.Cog):
 
         await me.edit(nick=f"{basename} ({trimmed_member})")
 
-    @alru_cache(maxsize=32)
+    @alru_cache(maxsize=8)
     async def create_model(self, author_id: int, conn):
-        cursor = await conn.execute(
-            "SELECT clean_content FROM messages WHERE author_id is ?",
-            (author_id, ))
-        messages = await cursor.fetchall()
+        model_path = os.path.join("models", f"{author_id}.json" )
 
-        if len(messages) < 25:
-            return None
+        try:
+            with open(model_path, mode="r") as f:
+                model = markovify.NewlineText.from_json(f.read())
+        except (FileNotFoundError, json.decoder.JSONDecodeError):
+            cursor = await conn.execute(
+                "SELECT clean_content FROM messages WHERE author_id is ?",
+                (author_id, ))
+            messages = await cursor.fetchall()
 
-        loop = asyncio.get_running_loop()
-        model = await loop.run_in_executor(self._pool, markovify.NewlineText,
-                                           ("\n".join(m[0] for m in messages)))
+            if len(messages) < 25:
+                return None
+
+            loop = asyncio.get_running_loop()
+            model = await loop.run_in_executor(self._pool,
+                                               markovify.NewlineText,
+                                               ("\n".join(m[0]
+                                                          for m in messages)))
+            with open(model_path, mode="w") as f:
+                f.write(model.to_json())
+
         return model
 
     @commands.command()
@@ -160,6 +173,7 @@ class MarkovCog(commands.Cog):
 
 
 def main():
+    os.makedirs("models", exist_ok=True)
     parser = argparse.ArgumentParser()
     parser.add_argument("-c",
                         "--config",
