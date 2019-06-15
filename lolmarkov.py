@@ -73,7 +73,7 @@ class MarkovCog(commands.Cog):
 
         await me.edit(nick=f"{basename} ({trimmed_member})")
 
-    @alru_cache(maxsize=8)
+    @alru_cache(maxsize=4)
     async def create_model(self, author_id: int, conn):
         model_path = os.path.join("models", f"{author_id}.json" )
 
