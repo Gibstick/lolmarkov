@@ -74,7 +74,8 @@ class MarkovCog(commands.Cog):
     @alru_cache(maxsize=32)
     async def create_model(self, author_id: int, conn):
         cursor = await conn.execute(
-            "SELECT content FROM messages WHERE author_id is ?", (author_id, ))
+            "SELECT clean_content FROM messages WHERE author_id is ?",
+            (author_id, ))
         messages = await cursor.fetchall()
 
         if len(messages) < 25:
@@ -128,11 +129,11 @@ class MarkovCog(commands.Cog):
         ATTEMPTS = 20
         ATTEMPTS_PER_ITER = 2
         MAX_OVERLAP_RATIO = 0.6
-        assert(ATTEMPTS % ATTEMPTS_PER_ITER == 0)
+        assert (ATTEMPTS % ATTEMPTS_PER_ITER == 0)
 
         async with ctx.typing():
             try:
-                for i in range(ATTEMPTS//ATTEMPTS_PER_ITER):
+                for i in range(ATTEMPTS // ATTEMPTS_PER_ITER):
                     if start:
                         sentence = self._model.make_sentence_with_start(
                             start,
