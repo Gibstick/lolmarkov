@@ -126,7 +126,7 @@ class MarkovCog(commands.Cog):
             return
 
         ATTEMPTS = 20
-        ATTEMPTS_PER_ITER = 4
+        ATTEMPTS_PER_ITER = 2
         MAX_OVERLAP_RATIO = 0.6
         assert(ATTEMPTS % ATTEMPTS_PER_ITER == 0)
 
@@ -147,7 +147,7 @@ class MarkovCog(commands.Cog):
                     if sentence:
                         break
                     else:
-                        asyncio.sleep(0)
+                        await asyncio.sleep(0)
             except KeyError:
                 sentence = None
 
