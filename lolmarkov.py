@@ -4,6 +4,7 @@ import concurrent.futures
 import configparser
 import functools
 import json
+import logging
 import os
 import sys
 import random
@@ -194,32 +195,37 @@ class MarkovCog(commands.Cog):
 
     async def talk_impl(self, ctx, uwu=False, start=None):
         """Talk command implementation."""
-        if self._model is None:
-            return await self.react_and_error(ctx,
-                                              "No active model.",
-                                              delete_after=None)
+        try:
+            if self._model is None:
+                return await self.react_and_error(ctx,
+                                                  "No active model.",
+                                                  delete_after=None)
 
-        async with ctx.typing():
-            try:
-                sentence = await self.get_sentence(start)
-            except KeyError:
-                return await self.react_and_error(
-                    ctx, f"{start} not found in data set.")
-            except markovify.text.ParamError:
-                # TODO: Don't hardcode the number of words here.
-                return await self.react_and_error(
+            async with ctx.typing():
+                try:
+                    sentence = await self.get_sentence(start)
+                except KeyError:
+                    return await self.react_and_error(
+                        ctx, f"{start} not found in data set.")
+                except markovify.text.ParamError:
+                    # TODO: Don't hardcode the number of words here.
+                    return await self.react_and_error(
+                        ctx,
+                        "At most two words can be used for the start of a sentence."
+                    )
+
+            if sentence:
+                if uwu:
+                    sentence = UWU(sentence)
+                await ctx.send(f"{sentence}\n`{self._model_attrib}`")
+            else:
+                await self.react_and_error(
                     ctx,
-                    "At most two words can be used for the start of a sentence."
-                )
-
-        if sentence:
-            if uwu:
-                sentence = UWU(sentence)
-            await ctx.send(f"{sentence}\n`{self._model_attrib}`")
-        else:
-            await self.react_and_error(
-                ctx, "Gave up after too many failures (too much similarity).",
-                "⏲")
+                    "Gave up after too many failures (too much similarity).",
+                    "⏲")
+        except:
+            logging.exception("Unknown exception in get_sentence():")
+            return await self.react_and_error(ctx, "Unknown error.")
 
 
 def main():
