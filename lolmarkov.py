@@ -172,10 +172,7 @@ class MarkovCog(commands.Cog):
 
         loop = asyncio.get_running_loop()
 
-        try:
-            sentence = await loop.run_in_executor(self._pool, fn)
-        except KeyError:
-            sentence = None
+        sentence = await loop.run_in_executor(self._pool, fn)
 
         return sentence
 
@@ -189,23 +186,34 @@ class MarkovCog(commands.Cog):
         """Like talk, but with uwu."""
         await self.talk_impl(ctx, uwu=True, start=start)
 
+    async def react_and_error(self, ctx, message, reaction="❌",
+                              delete_after=3):
+        """React to the command with an "X" and print a temporary error message."""
+        await ctx.message.add_reaction(reaction)
+        await ctx.send(message, delete_after=delete_after)
+
     async def talk_impl(self, ctx, uwu=False, start=None):
         """Talk command implementation."""
         if self._model is None:
-            await ctx.message.add_reaction("❌")
-            await ctx.send("No model is active.")
-            return
+            return await self.react_and_error(ctx,
+                                              "No active model.",
+                                              delete_after=None)
 
         async with ctx.typing():
-            sentence = await self.get_sentence(start)
+            try:
+                sentence = await self.get_sentence(start)
+            except KeyError:
+                return await self.react_and_error(
+                    ctx, f"{start} not found in data set.")
 
         if sentence:
             if uwu:
                 sentence = UWU(sentence)
             await ctx.send(f"{sentence}\n`{self._model_attrib}`")
         else:
-            await ctx.message.add_reaction("❌")
-            await ctx.send("Unable to get sentence.", delete_after=3)
+            await self.react_and_error(
+                ctx, "Gave up after too many failures (too much similarity).",
+                "⏲")
 
 
 def main():
