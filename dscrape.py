@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS messages(
 
 
 class MyClient(discord.Client):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, update, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._started = False
 
@@ -60,6 +60,8 @@ class MyClient(discord.Client):
 
         # Background task to periodically commit
         self.commit_task = self.loop.create_task(self.commit_task())
+
+        self.update = update
 
     async def commit_task(self):
         await self.wait_until_ready()
@@ -165,7 +167,7 @@ class MyClient(discord.Client):
 
             print("Inserting messages")
 
-            async for t in self.message_tuple_generator():
+            async for t in self.message_tuple_generator(update=self.update):
                 # Users that have left the server won't be in the users table,
                 # and this breaks the foreign key constraint. We insert them
                 # here if necessary.
@@ -194,13 +196,18 @@ def main():
                         "--config",
                         help="Config file path",
                         default="config.ini")
+    parser.add_argument("-u",
+                        "--update",
+                        help="Grab newer messages only",
+                        action="store_true",
+                        default=False)
     args = parser.parse_args()
 
     config = configparser.ConfigParser()
     config.read(args.config)
     token = util.try_config(config, "MAIN", "Token")
 
-    client = MyClient()
+    client = MyClient(args.update)
     client.run(token)
 
 
