@@ -6,6 +6,7 @@ import functools
 import json
 import os
 import sys
+import random
 import traceback
 from collections import namedtuple
 
@@ -33,6 +34,31 @@ async def database_user(conn, argument):
     user = users[0]
     member = DuckUser(id=user[0], name=user[1], discriminator=user[2])
     return member
+
+
+def last_replace(s, old, new):
+    li = s.rsplit(old, 1)
+    return new.join(li)
+
+
+def UWU(msg):
+    vowels = ['a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U']
+    faces = ["(・`ω´・)", ";;w;;", "owo", "UwU", ">w<", "^w^"]
+    msg = msg.replace('L', 'W').replace('l', 'w')
+    msg = msg.replace('R', 'W').replace('r', 'w')
+
+    msg = last_replace(msg, '!', '! {}'.format(random.choice(faces)))
+    msg = last_replace(msg, '?', '? owo')
+    msg = last_replace(msg, '.', '. {}'.format(random.choice(faces)))
+
+    for v in vowels:
+        if 'n{}'.format(v) in msg:
+            msg = msg.replace('n{}'.format(v), 'ny{}'.format(v))
+        if 'N{}'.format(v) in msg:
+            msg = msg.replace('N{}'.format(v),
+                              'N{}{}'.format('Y' if v.isupper() else 'y', v))
+
+    return msg
 
 
 class MarkovCog(commands.Cog):
@@ -75,7 +101,7 @@ class MarkovCog(commands.Cog):
 
     @alru_cache(maxsize=4)
     async def create_model(self, author_id: int, conn):
-        model_path = os.path.join("models", f"{author_id}.json" )
+        model_path = os.path.join("models", f"{author_id}.json")
 
         try:
             with open(model_path, mode="r") as f:
@@ -131,41 +157,60 @@ class MarkovCog(commands.Cog):
             traceback.print_exc()
         await ctx.message.add_reaction("❌")
 
-    @commands.command()
-    async def talk(self, ctx, *, start: str = None):
-        """Get one sentence from the model, with optional start parameter."""
-        if self._model is None:
-            await ctx.message.add_reaction("❌")
-            await ctx.send("No model is active.")
-            return
-
+    async def get_sentence(self, start=None):
+        """Get one sentence from the model, with optional start parameter.
+        
+        Assumes that a model is active."""
         ATTEMPTS = 20
         ATTEMPTS_PER_ITER = 2
         MAX_OVERLAP_RATIO = 0.6
         assert (ATTEMPTS % ATTEMPTS_PER_ITER == 0)
 
+        try:
+            for _ in range(ATTEMPTS // ATTEMPTS_PER_ITER):
+                if start:
+                    sentence = self._model.make_sentence_with_start(
+                        start,
+                        tries=ATTEMPTS_PER_ITER,
+                        strict=False,
+                        max_overlap_ratio=MAX_OVERLAP_RATIO)
+                else:
+                    sentence = self._model.make_sentence(
+                        start,
+                        tries=ATTEMPTS_PER_ITER,
+                        max_overlap_ratio=MAX_OVERLAP_RATIO)
+                if sentence:
+                    break
+                else:
+                    await asyncio.sleep(0)
+        except KeyError:
+            sentence = None
+
+        return sentence
+
+    @commands.command()
+    async def talk(self, ctx, *, start: str = None):
+        """Talk command with optional start parameter."""
+        await self.talk_impl(ctx, uwu=False, start=start)
+
+    @commands.command()
+    async def talkuwu(self, ctx, *, start: str = None):
+        """Like talk, but with uwu."""
+        await self.talk_impl(ctx, uwu=True, start=start)
+
+    async def talk_impl(self, ctx, uwu=False, start=None):
+        """Talk command implementation."""
+        if self._model is None:
+            await ctx.message.add_reaction("❌")
+            await ctx.send("No model is active.")
+            return
+
         async with ctx.typing():
-            try:
-                for i in range(ATTEMPTS // ATTEMPTS_PER_ITER):
-                    if start:
-                        sentence = self._model.make_sentence_with_start(
-                            start,
-                            tries=ATTEMPTS_PER_ITER,
-                            strict=False,
-                            max_overlap_ratio=MAX_OVERLAP_RATIO)
-                    else:
-                        sentence = self._model.make_sentence(
-                            start,
-                            tries=ATTEMPTS_PER_ITER,
-                            max_overlap_ratio=MAX_OVERLAP_RATIO)
-                    if sentence:
-                        break
-                    else:
-                        await asyncio.sleep(0)
-            except KeyError:
-                sentence = None
+            sentence = await self.get_sentence(start)
 
         if sentence:
+            if uwu:
+                sentence = UWU(sentence)
             await ctx.send(f"{sentence}\n`{self._model_attrib}`")
         else:
             await ctx.message.add_reaction("❌")
