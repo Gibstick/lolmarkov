@@ -187,7 +187,7 @@ class MarkovCog(commands.Cog):
         await self.talk_impl(ctx, uwu=True, start=start)
 
     async def react_and_error(self, ctx, message, reaction="❌",
-                              delete_after=3):
+                              delete_after=8):
         """React to the command with an "X" and print a temporary error message."""
         await ctx.message.add_reaction(reaction)
         await ctx.send(message, delete_after=delete_after)
@@ -205,6 +205,12 @@ class MarkovCog(commands.Cog):
             except KeyError:
                 return await self.react_and_error(
                     ctx, f"{start} not found in data set.")
+            except markovify.text.ParamError:
+                # TODO: Don't hardcode the number of words here.
+                return await self.react_and_error(
+                    ctx,
+                    "At most two words can be used for the start of a sentence."
+                )
 
         if sentence:
             if uwu:
