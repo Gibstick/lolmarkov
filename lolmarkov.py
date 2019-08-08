@@ -161,28 +161,19 @@ class MarkovCog(commands.Cog):
         """Get one sentence from the model, with optional start parameter.
 
         Assumes that a model is active."""
-        ATTEMPTS = 20
-        ATTEMPTS_PER_ITER = 2
-        MAX_OVERLAP_RATIO = 0.6
-        assert (ATTEMPTS % ATTEMPTS_PER_ITER == 0)
+        sentence_kwargs = {"tries": 20, "max_overlap_ratio": 0.6}
+
+        if start:
+            fn = functools.partial(self._model.make_sentence_with_start, start,
+                                   **sentence_kwargs)
+        else:
+            fn = functools.partial(self._model.make_sentence,
+                                   **sentence_kwargs)
+
+        loop = asyncio.get_running_loop()
 
         try:
-            for _ in range(ATTEMPTS // ATTEMPTS_PER_ITER):
-                if start:
-                    sentence = self._model.make_sentence_with_start(
-                        start,
-                        tries=ATTEMPTS_PER_ITER,
-                        strict=False,
-                        max_overlap_ratio=MAX_OVERLAP_RATIO)
-                else:
-                    sentence = self._model.make_sentence(
-                        start,
-                        tries=ATTEMPTS_PER_ITER,
-                        max_overlap_ratio=MAX_OVERLAP_RATIO)
-                if sentence:
-                    break
-                else:
-                    await asyncio.sleep(0)
+            sentence = await loop.run_in_executor(self._pool, fn)
         except KeyError:
             sentence = None
 
