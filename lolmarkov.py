@@ -159,7 +159,7 @@ class MarkovCog(commands.Cog):
 
     async def get_sentence(self, start=None):
         """Get one sentence from the model, with optional start parameter.
-        
+
         Assumes that a model is active."""
         ATTEMPTS = 20
         ATTEMPTS_PER_ITER = 2
