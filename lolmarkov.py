@@ -33,8 +33,10 @@ class SentenceText(markovify.Text):
 async def database_user(conn, argument):
     """"Look up a user in the database and return a NamedTuple mimicking a discord.User"""
     cursor = await conn.execute(
-        "SELECT id, username, discriminator FROM users WHERE username||'#'||discriminator == ? LIMIT 1",
-        (argument, ))
+        """SELECT id, username, discriminator FROM users
+        WHERE username||'#'||discriminator == ?
+        OR id is ?
+        LIMIT 1""", (argument, argument))
     users = await cursor.fetchall()
 
     if not users:
@@ -108,16 +110,37 @@ class MarkovCog(commands.Cog):
 
         await me.edit(nick=f"{basename} ({trimmed_member})")
 
+    async def cache_update(self, author_id: int, model_path: str, conn):
+        """Invalidate the cache if author_id has newer messages than the json."""
+        mtime = os.path.getmtime(model_path)
+        cursor = await conn.execute(
+            """
+            SELECT max(timestamp) FROM messages
+            WHERE author_id is ?
+            """, (author_id, ))
+        latest_timestamp = await cursor.fetchone()
+
+        if latest_timestamp is None:
+            return
+
+        if latest_timestamp[0] > mtime:
+            os.remove(model_path)
+
     async def create_model(self, author_id: int, conn):
         model_path = os.path.join("models", f"{author_id}.json")
 
         try:
+            await self.cache_update(author_id, model_path, conn)
             with open(model_path, mode="r") as f:
                 model = SentenceText.from_json(f.read())
         except (FileNotFoundError, json.decoder.JSONDecodeError):
             cursor = await conn.execute(
-                "SELECT clean_content FROM messages WHERE author_id is ?",
-                (author_id, ))
+                """
+                SELECT clean_content FROM messages
+                WHERE author_id is ?
+                ORDER BY timestamp DESC
+                LIMIT 100000
+                """, (author_id, ))
             messages = await cursor.fetchall()
 
             if len(messages) < 25:
@@ -166,18 +189,32 @@ class MarkovCog(commands.Cog):
         """Get one sentence from the model, with optional start parameter.
 
         Assumes that a model is active."""
-        sentence_kwargs = {"tries": 40, "max_overlap_ratio": 0.7}
-        make_fn = (self._model.make_sentence_with_start
+        TRIES = 60
+        TRIES_PER_RATIO = 20
+        assert (TRIES % TRIES_PER_RATIO == 0)
+        make_fn = (functools.partial(self._model.make_sentence_with_start,
+                                     start)
                    if start else self._model.make_sentence)
-        fn = functools.partial(make_fn, start, **sentence_kwargs)
 
-        sentence = await self.bot.loop.run_in_executor(self._pool, fn)
+        max_overlap_ratio = 0.7
+        assert ((TRIES // TRIES_PER_RATIO) * 0.1 + max_overlap_ratio <= 1.0)
+        # This loop is CPU bound but we cheat a little and yield after every
+        # try so as to not stall the event loop. Also, we increase the max
+        # overlap ratio so that the loop is more likely to terminate by the
+        # end.
+        for _1 in range(TRIES // TRIES_PER_RATIO):
+            for _2 in range(TRIES_PER_RATIO):
+                sentence = make_fn(max_overlap_ratio=max_overlap_ratio)
+                await asyncio.sleep(0)
+            else:
+                max_overlap_ratio += 0.1
+                continue
+            break
 
-        # If we failed to find a sentence with no overlap, remove the overlap
-        # restriction and just take whatever we can.
+        # If we still don't get a sentence, just give up and stop testing the
+        # output so that we allow total repeats.
         if not sentence:
-            fn = functools.partial(make_fn, start, test_output=False)
-            sentence = await self.bot.loop.run_in_executor(self._pool, fn)
+            sentence = make_fn(test_output=False)
 
         return sentence
 
