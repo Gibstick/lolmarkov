@@ -10,6 +10,7 @@ import sys
 import random
 import traceback
 from collections import namedtuple
+from typing import Iterable
 
 import aiosqlite
 import discord
@@ -19,6 +20,14 @@ from discord.ext import commands
 import util
 
 DuckUser = namedtuple("DuckUser", ["id", "name", "discriminator"])
+
+
+class SentenceText(markovify.Text):
+    """Like markovify.Text, but a list of Iterable of sentences can be passed in."""
+
+    def generate_corpus(self, sentences: Iterable[str]):
+        return map(self.word_split, filter(self.test_sentence_input,
+                                           sentences))
 
 
 async def database_user(conn, argument):
@@ -104,7 +113,7 @@ class MarkovCog(commands.Cog):
 
         try:
             with open(model_path, mode="r") as f:
-                model = markovify.NewlineText.from_json(f.read())
+                model = SentenceText.from_json(f.read())
         except (FileNotFoundError, json.decoder.JSONDecodeError):
             cursor = await conn.execute(
                 "SELECT clean_content FROM messages WHERE author_id is ?",
@@ -115,8 +124,7 @@ class MarkovCog(commands.Cog):
                 return None
 
             model = await self.bot.loop.run_in_executor(
-                self._pool, markovify.NewlineText,
-                ("\n".join(m[0] for m in messages)))
+                self._pool, SentenceText, [m[0] for m in messages])
             with open(model_path, mode="w") as f:
                 f.write(model.to_json())
 
