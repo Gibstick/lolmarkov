@@ -158,16 +158,18 @@ class MarkovCog(commands.Cog):
         """Get one sentence from the model, with optional start parameter.
 
         Assumes that a model is active."""
-        sentence_kwargs = {"tries": 20, "max_overlap_ratio": 0.6}
-
-        if start:
-            fn = functools.partial(self._model.make_sentence_with_start, start,
-                                   **sentence_kwargs)
-        else:
-            fn = functools.partial(self._model.make_sentence,
-                                   **sentence_kwargs)
+        sentence_kwargs = {"tries": 40, "max_overlap_ratio": 0.7}
+        make_fn = (self._model.make_sentence_with_start
+                   if start else self._model.make_sentence)
+        fn = functools.partial(make_fn, start, **sentence_kwargs)
 
         sentence = await self.bot.loop.run_in_executor(self._pool, fn)
+
+        # If we failed to find a sentence with no overlap, remove the overlap
+        # restriction and just take whatever we can.
+        if not sentence:
+            fn = functools.partial(make_fn, start, test_output=False)
+            sentence = await self.bot.loop.run_in_executor(self._pool, fn)
 
         return sentence
 
