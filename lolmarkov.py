@@ -68,7 +68,7 @@ class MarkovCog(commands.Cog):
         self._model = None
         self._model_attrib = None
         self._user_converter = commands.UserConverter()
-        self._pool = concurrent.futures.ProcessPoolExecutor(max_workers=1)
+        self._pool = concurrent.futures.ProcessPoolExecutor()
 
     @commands.Cog.listener()
     async def on_ready(self):
