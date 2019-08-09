@@ -33,3 +33,5 @@ The talkbot has the following commands.
 - `$talk [init]`: Generate a random message, given up to two words to start the
   sentence. This command may fail if there is not enough data for the current
   model.
+
+See more commands with `$help`.

@@ -15,6 +15,7 @@ from typing import Iterable
 import aiosqlite
 import discord
 import markovify
+import psutil
 from discord.ext import commands
 
 import util
@@ -267,6 +268,11 @@ class MarkovCog(commands.Cog):
         except:
             logging.exception("Unknown exception in get_sentence():")
             return await self.react_and_error(ctx, "Unknown error.")
+
+    @commands.command()
+    async def memory(self, ctx):
+        available_mb = psutil.virtual_memory().available / 1024 / 1024  # MiB
+        await ctx.send(f"Memory available: {available_mb} MiB")
 
 
 def main():

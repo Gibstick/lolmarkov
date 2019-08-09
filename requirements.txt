@@ -1,3 +1,4 @@
 aiosqlite == 0.10.0
-discord.py == 1.2.2
-markovify == 0.7.1
+discord.py == 1.2.3
+markovify == 0.7.2
+psutil == 5.6.3
