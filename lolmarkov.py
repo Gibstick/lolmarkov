@@ -113,14 +113,18 @@ class MarkovCog(commands.Cog):
     async def cache_update(self, author_id: int, model_path: str, conn):
         """Invalidate the cache if author_id has newer messages than the json."""
         mtime = os.path.getmtime(model_path)
-        latest_timestamp = await conn.execute(
+        cursor = await conn.execute(
             """
             SELECT max(timestamp) FROM messages
             WHERE author_id is ?
-            """, (author_id, )).fetchone()[0]
+            """, (author_id, ))
+        latest_timestamp = await cursor.fetchone()
 
-        if latest_timestamp > mtime:
-            os.unlink(model_path)
+        if latest_timestamp is None:
+            return
+
+        if latest_timestamp[0] > mtime:
+            os.remove(model_path)
 
     async def create_model(self, author_id: int, conn):
         model_path = os.path.join("models", f"{author_id}.json")
