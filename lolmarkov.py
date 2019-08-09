@@ -14,7 +14,6 @@ from collections import namedtuple
 import aiosqlite
 import discord
 import markovify
-from async_lru import alru_cache
 from discord.ext import commands
 
 import util
@@ -100,7 +99,6 @@ class MarkovCog(commands.Cog):
 
         await me.edit(nick=f"{basename} ({trimmed_member})")
 
-    @alru_cache(maxsize=4)
     async def create_model(self, author_id: int, conn):
         model_path = os.path.join("models", f"{author_id}.json")
 
@@ -116,11 +114,9 @@ class MarkovCog(commands.Cog):
             if len(messages) < 25:
                 return None
 
-            loop = asyncio.get_running_loop()
-            model = await loop.run_in_executor(self._pool,
-                                               markovify.NewlineText,
-                                               ("\n".join(m[0]
-                                                          for m in messages)))
+            model = await self.bot.loop.run_in_executor(
+                self._pool, markovify.NewlineText,
+                ("\n".join(m[0] for m in messages)))
             with open(model_path, mode="w") as f:
                 f.write(model.to_json())
 
@@ -171,9 +167,7 @@ class MarkovCog(commands.Cog):
             fn = functools.partial(self._model.make_sentence,
                                    **sentence_kwargs)
 
-        loop = asyncio.get_running_loop()
-
-        sentence = await loop.run_in_executor(self._pool, fn)
+        sentence = await self.bot.loop.run_in_executor(self._pool, fn)
 
         return sentence
 
