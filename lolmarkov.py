@@ -193,8 +193,8 @@ class MarkovCog(commands.Cog):
         TRIES = 60
         TRIES_PER_RATIO = 20
         assert (TRIES % TRIES_PER_RATIO == 0)
-        make_fn = (functools.partial(self._model.make_sentence_with_start,
-                                     start)
+        make_fn = (functools.partial(
+            self._model.make_sentence_with_start, start, strict=False)
                    if start else self._model.make_sentence)
 
         max_overlap_ratio = 0.7
