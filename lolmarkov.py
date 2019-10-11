@@ -190,32 +190,27 @@ class MarkovCog(commands.Cog):
         """Get one sentence from the model, with optional start parameter.
 
         Assumes that a model is active."""
-        TRIES = 60
-        TRIES_PER_RATIO = 20
-        assert (TRIES % TRIES_PER_RATIO == 0)
-        make_fn = (functools.partial(
-            self._model.make_sentence_with_start, start, strict=False)
+        TRIES_PER_RATIO = 10
+        make_fn = (functools.partial(self._model.make_sentence_with_start,
+                                     start)
                    if start else self._model.make_sentence)
 
         max_overlap_ratio = 0.7
-        assert ((TRIES // TRIES_PER_RATIO) * 0.1 + max_overlap_ratio <= 1.0)
-        # This loop is CPU bound but we cheat a little and yield after every
-        # try so as to not stall the event loop. Also, we increase the max
-        # overlap ratio so that the loop is more likely to terminate by the
-        # end.
-        for _1 in range(TRIES // TRIES_PER_RATIO):
-            for _2 in range(TRIES_PER_RATIO):
+        while max_overlap_ratio <= 1.0:
+            for _ in range(TRIES_PER_RATIO):
                 sentence = make_fn(max_overlap_ratio=max_overlap_ratio)
-                await asyncio.sleep(0)
+                if sentence:
+                    break
             else:
                 max_overlap_ratio += 0.1
+                await asyncio.sleep(0)
                 continue
             break
 
         # If we still don't get a sentence, just give up and stop testing the
         # output so that we allow total repeats.
         if not sentence:
-            sentence = make_fn(test_output=False)
+            sentence = make_fn(test_output=False, strict=False)
 
         return sentence
 
