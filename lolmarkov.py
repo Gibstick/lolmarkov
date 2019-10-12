@@ -276,7 +276,7 @@ class MarkovCog(commands.Cog):
         await ctx.send(f"Memory available: {available_mb} MiB")
 
     @commands.command()
-    async def quote(self, ctx, target: str, keyword: str = ""):
+    async def quote(self, ctx, target: str, *, keyword: str = ""):
         """Grab a random quote from target, optionally containing keyword."""
         try:
             member = await self.user_lookup(ctx, target)
@@ -286,12 +286,12 @@ class MarkovCog(commands.Cog):
 
         author_id = member.id
 
-        pattern = f"% {keyword} %"
+        patterns = (f"% {keyword} %", f"{keyword} %", f"% {keyword}")
         query = (
             "SELECT clean_content, timestamp FROM messages WHERE author_id is ?\n"
-            "AND clean_content LIKE ?\n"
+            "AND (clean_content LIKE ? OR clean_content LIKE ? OR clean_content LIKE ?)\n"
             "ORDER BY RANDOM() LIMIT 1")
-        cursor = await self._conn.execute(query, (author_id, pattern))
+        cursor = await self._conn.execute(query, (author_id, ) + patterns)
         row = await cursor.fetchone()
 
         if not row:
