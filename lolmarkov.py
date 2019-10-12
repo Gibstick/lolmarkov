@@ -10,6 +10,7 @@ import sys
 import random
 import traceback
 from collections import namedtuple
+from datetime import datetime
 from typing import Iterable
 
 import aiosqlite
@@ -154,15 +155,20 @@ class MarkovCog(commands.Cog):
 
         return model
 
+    async def user_lookup(self, ctx, arg):
+        try:
+            member = await self._user_converter.convert(ctx, arg)
+        except commands.CommandError:
+            member = await database_user(self._conn, arg)
+
+        return member
+
     @commands.command()
     async def switch(self, ctx, *, arg: str):
         """Switch to a model for a different user."""
         # Due to the complicated fallback logic and the shared database
         # connection, we convert the argmuent manually.
-        try:
-            member = await self._user_converter.convert(ctx, arg)
-        except commands.CommandError:
-            member = await database_user(self._conn, arg)
+        member = await self.user_lookup(ctx, arg)
 
         async with ctx.typing():
             new_model = await self.create_model(member.id, self._conn)
@@ -268,6 +274,46 @@ class MarkovCog(commands.Cog):
     async def memory(self, ctx):
         available_mb = psutil.virtual_memory().available / 1024 / 1024  # MiB
         await ctx.send(f"Memory available: {available_mb} MiB")
+
+    @commands.command()
+    async def quote(self, ctx, target: str, keyword: str = ""):
+        """Grab a random quote from target, optionally containing keyword."""
+        try:
+            member = await self.user_lookup(ctx, target)
+        except commands.CommandError:
+            await self.react_and_error(ctx, f"User {target} found")
+            return
+
+        author_id = member.id
+
+        pattern = f"% {keyword} %"
+        query = (
+            "SELECT clean_content, timestamp FROM messages WHERE author_id is ?\n"
+            "AND clean_content LIKE ?\n"
+            "ORDER BY RANDOM() LIMIT 1")
+        cursor = await self._conn.execute(query, (author_id, pattern))
+        row = await cursor.fetchone()
+
+        if not row:
+            await self.react_and_error(ctx, "No matching quote found")
+            return
+
+        timestamp = datetime.utcfromtimestamp(int(row[1])).strftime("%c")
+        random_quote = row[0]
+
+        quote_attrib = f"{member.name}#{member.discriminator}"
+        message = f"{random_quote}\n> {quote_attrib} {timestamp}"
+        await ctx.send(message)
+
+    @commands.command()
+    async def sqlexec(self, ctx, *, query: str):
+        """lol"""
+        cursor = await self._conn.execute(query)
+        rows = await cursor.fetchall()
+        message = "\n".join(str(row) for row in rows[:10])
+        message = f"```\n{message}\n```"
+        await ctx.send(message)
+        await ctx.send(f"Query returned {len(rows)} rows")
 
 
 def main():
