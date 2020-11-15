@@ -1,4 +1,21 @@
-aiosqlite == 0.10.0
-discord.py == 1.2.3
-markovify == 0.7.2
-psutil == 5.6.3
+aiohttp==3.6.3
+aiosqlite==0.10.0
+astroid==2.4.2
+async-timeout==3.0.1
+attrs==20.3.0
+chardet==3.0.4
+discord.py==1.5.1
+idna==2.10
+isort==5.6.4
+lazy-object-proxy==1.4.3
+markovify==0.7.2
+mccabe==0.6.1
+multidict==4.7.6
+psutil==5.6.3
+pylint==2.6.0
+six==1.15.0
+toml==0.10.2
+Unidecode==1.1.1
+websockets==6.0
+wrapt==1.12.1
+yarl==1.5.1
