@@ -6,6 +6,7 @@ import functools
 import json
 import logging
 import os
+import sqlite3
 import sys
 import random
 import traceback
@@ -308,8 +309,13 @@ class MarkovCog(commands.Cog):
     @commands.command()
     async def sqlexec(self, ctx, *, query: str):
         """lol"""
-        cursor = await self._conn.execute(query)
-        rows = await cursor.fetchall()
+        try:
+            async with ctx.typing():
+                cursor = await self._conn.execute(query)
+                rows = await cursor.fetchall()
+        except sqlite3.OperationalError as e:
+            await self.react_and_error(ctx, f"Error: {str(e)}")
+            return
         message = "\n".join(str(row) for row in rows[:10])
         message = f"```\n{message}\n```"
         await ctx.send(message)
