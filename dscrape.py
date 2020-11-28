@@ -11,38 +11,38 @@ import discord
 import util
 
 # See https://discordpy.readthedocs.io/en/v0.16.12/api.html#user
-USERS_TABLE_DDL = \
-    """
+USERS_TABLE_DDL = """
 CREATE TABLE IF NOT EXISTS users(
-    id INTEGER PRIMARY KEY,
+    user_id INTEGER PRIMARY KEY,
     username TEXT NOT NULL,
     display_name TEXT NOT NULL,
     discriminator TEXT NOT NULL
 );"""
 
 # See https://discordpy.readthedocs.io/en/v0.16.12/api.html#channel
-CHANNELS_TABLE_DDL = \
-    """
+CHANNELS_TABLE_DDL = """
 CREATE TABLE IF NOT EXISTS channels(
-    id INTEGER PRIMARY KEY,
+    channel_id INTEGER PRIMARY KEY,
     channel_name NOT NULL
 );"""
 
 # See https://discordpy.readthedocs.io/en/v0.16.12/api.html#message
-# TODO: attachments table?
-MESSAGES_TABLE_DDL = \
-    """
+MESSAGES_TABLE_DDL = """
 CREATE TABLE IF NOT EXISTS messages(
-    id INTEGER PRIMARY KEY,
+    message_id INTEGER PRIMARY KEY,
     timestamp INTEGER NOT NULL,
-    author_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
     author_username TEXT NOT NULL,
     channel_id INTEGER NOT NULL,
     content TEXT,
-    clean_content TEXT,
-    attachments BLOB,
-    FOREIGN KEY(author_id) REFERENCES users(id),
-    FOREIGN KEY(channel_id) REFERENCES channels(id)
+    clean_content TEXT
+);"""
+
+MENTIONS_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS mentions(
+    from_user_id INTEGER NOT NULL,
+    to_user_id INTEGER NOT NULL,
+    message_id INTEGER NOT NULL
 );"""
 
 
@@ -52,21 +52,20 @@ class MyClient(discord.Client):
         self._started = False
 
         self._conn = sqlite3.connect("discord_archive.sqlite3")
-        self._conn.execute("PRAGMA foreign_keys = ON;")
         self._conn.execute(USERS_TABLE_DDL)
         self._conn.execute(CHANNELS_TABLE_DDL)
         self._conn.execute(MESSAGES_TABLE_DDL)
+        self._conn.execute(MENTIONS_TABLE_DDL)
         self._conn.commit()
 
         # Background task to periodically commit
-        self.commit_task = self.loop.create_task(self.commit_task())
+        self.task = self.loop.create_task(self.commit_task())
 
         self.update = update
 
     async def commit_task(self):
         await self.wait_until_ready()
-        last_count = int(
-            next(self._conn.execute("SELECT COUNT(*) FROM messages;"))[0])
+        last_count = int(next(self._conn.execute("SELECT COUNT(*) FROM messages;"))[0])
 
         while not self.is_closed():
             self._conn.commit()
@@ -80,8 +79,7 @@ class MyClient(discord.Client):
     async def user_tuple_generator(self):
         """Yields tuples to be inserted into the users table."""
         for user in self.get_all_members():
-            yield (int(user.id), user.name, user.display_name,
-                   user.discriminator)
+            yield (int(user.id), user.name, user.display_name, user.discriminator)
 
     async def channel_tuple_generator(self):
         """Yields tuples to be inserted into the channels table."""
@@ -104,8 +102,9 @@ class MyClient(discord.Client):
 
         Yields a tuple of (message tuple, user tuple)."""
         # Archive all channels that we have access to
-        channels = (c for c in self.get_all_channels()
-                    if await self.archive_permission(c))
+        channels = (
+            c for c in self.get_all_channels() if await self.archive_permission(c)
+        )
 
         async for channel in channels:
             if channel.type != discord.ChannelType.text:
@@ -115,34 +114,53 @@ class MyClient(discord.Client):
 
             before, after = None, None
             if update:
-                for row in self._conn.execute(
-                        """
-                  SELECT id, max(timestamp) FROM messages
-                  WHERE channel_id = ?""", (int(channel.id), )):
+                cursor = self._conn.execute(
+                    """
+                  SELECT message_id, max(timestamp) FROM messages
+                  WHERE channel_id = ?""",
+                    (int(channel.id),),
+                )
+                row = cursor.fetchone() or (None, None)
+                if row[0]:
                     after = discord.Object(row[0])
-
             else:
-                for row in self._conn.execute(
-                        """
-                  SELECT id, min(timestamp) FROM messages
-                  WHERE channel_id = ?""", (int(channel.id), )):
+                cursor = self._conn.execute(
+                    """
+                  SELECT message_id, min(timestamp) FROM messages
+                  WHERE channel_id = ?""",
+                    (int(channel.id),),
+                )
+                row = cursor.fetchone() or (None, None)
+                if row[0]:
                     before = discord.Object(row[0])
+            async for message in channel.history(
+                before=before, after=after, limit=None
+            ):
 
-            async for message in channel.history(before=before,
-                                                 after=after,
-                                                 limit=None):
-
-                # TODO: fix attachments
-                attachments = None
                 # Get UTC unix timestamp from a naive datetime object
-                ts = message.created_at.replace(
-                    tzinfo=timezone.utc).timestamp()
-                yield ((int(message.id), ts, int(message.author.id),
-                        message.author.name, int(message.channel.id),
-                        message.content, message.clean_content, attachments),
-                       (message.author.id, message.author.name,
+                ts = message.created_at.replace(tzinfo=timezone.utc).timestamp()
+                mentions = [
+                    (int(message.id), int(message.author.id), int(user.id))
+                    for user in message.mentions
+                ]
+                yield (
+                    (
+                        int(message.id),
+                        ts,
+                        int(message.author.id),
+                        message.author.name,
+                        int(message.channel.id),
+                        message.content,
+                        message.clean_content,
+                    ),
+                    (
+                        message.author.id,
+                        message.author.name,
                         message.author.display_name,
-                        message.author.discriminator))
+                        message.author.discriminator,
+                    ),
+                    (mentions),
+                )
 
     async def on_ready(self):
         if self._started:
@@ -153,15 +171,13 @@ class MyClient(discord.Client):
             # TODO: async-aware sqlite3 library that async generators
             print("Inserting channels")
             async for t in self.channel_tuple_generator():
-                self._conn.execute(
-                    "INSERT OR IGNORE INTO channels VALUES(?, ?)", t)
+                self._conn.execute("INSERT OR IGNORE INTO channels VALUES(?, ?)", t)
 
             print("Inserting users")
             users = set()  # Keep track of user ids we've inserted
             async for t in self.user_tuple_generator():
                 users.add(t[0])
-                self._conn.execute(
-                    "INSERT OR IGNORE INTO users VALUES(?, ?, ?, ?)", t)
+                self._conn.execute("INSERT OR IGNORE INTO users VALUES(?, ?, ?, ?)", t)
 
             self._conn.commit()
 
@@ -171,36 +187,42 @@ class MyClient(discord.Client):
                 # Users that have left the server won't be in the users table,
                 # and this breaks the foreign key constraint. We insert them
                 # here if necessary.
-                message, user = t
+                message, user, mentions = t
                 if user[0] not in users:
                     self._conn.execute(
-                        "INSERT OR IGNORE INTO users VALUES (?, ?, ?, ?)",
-                        user)
+                        "INSERT OR IGNORE INTO users VALUES (?, ?, ?, ?)", user
+                    )
                     users.add(user[0])
                 self._conn.execute(
-                    "INSERT OR IGNORE INTO messages VALUES "
-                    "(?, ?, ?, ?, ?, ?, ?, ?)", message)
+                    "INSERT OR IGNORE INTO messages VALUES " "(?, ?, ?, ?, ?, ?, ?)",
+                    message,
+                )
+
+                for mention in mentions:
+                    self._conn.execute(
+                        "INSERT INTO mentions VALUES (?, ?, ?)",
+                        mention
+                    )
             self._conn.commit()
 
             print("Done!")
         except Exception as e:
             print(e)
         finally:
-            self.commit_task.cancel()
+            self.task.cancel()
             await self.logout()
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c",
-                        "--config",
-                        help="Config file path",
-                        default="config.ini")
-    parser.add_argument("-u",
-                        "--update",
-                        help="Grab newer messages only",
-                        action="store_true",
-                        default=False)
+    parser.add_argument("-c", "--config", help="Config file path", default="config.ini")
+    parser.add_argument(
+        "-u",
+        "--update",
+        help="Grab newer messages only",
+        action="store_true",
+        default=False,
+    )
     args = parser.parse_args()
 
     config = configparser.ConfigParser()
