@@ -39,10 +39,10 @@ CREATE TABLE IF NOT EXISTS messages(
 );"""
 
 MENTIONS_TABLE_DDL = """
-CREATE TABLE IF NOT EXISTS mentions(
+CREATE TABLE IF NOT EXISTS MENTIONS(
+    message_id INTEGER NOT NULL,
     from_user_id INTEGER NOT NULL,
-    to_user_id INTEGER NOT NULL,
-    message_id INTEGER NOT NULL
+    to_user_id INTEGER NOT NULL
 );"""
 
 
