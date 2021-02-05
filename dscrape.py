@@ -119,14 +119,14 @@ class MyClient(discord.Client):
                         """
                   SELECT id, max(timestamp) FROM messages
                   WHERE channel_id = ?""", (int(channel.id), )):
-                    after = discord.Object(row[0])
+                    after = discord.Object(row[0]) if row[0] else None
 
             else:
                 for row in self._conn.execute(
                         """
                   SELECT id, min(timestamp) FROM messages
                   WHERE channel_id = ?""", (int(channel.id), )):
-                    before = discord.Object(row[0])
+                    before = discord.Object(row[0]) if row[0] else None
 
             async for message in channel.history(before=before,
                                                  after=after,
