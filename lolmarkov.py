@@ -19,12 +19,15 @@ import discord
 import markovify
 import psutil
 from discord.ext import commands
-
+from discord_slash.utils.manage_components import create_button, create_actionrow
+from discord_slash.model import ButtonStyle
+from discord_slash.utils.manage_components import wait_for_component
+from discord_slash import cog_ext
+from discord_slash import SlashCommand
 import util
 
 DuckUser = namedtuple("DuckUser", ["id", "name", "discriminator"])
-
-
+slash = None
 class SentenceText(markovify.Text):
     """Like markovify.Text, but a list of Iterable of sentences can be passed in."""
 
@@ -306,22 +309,48 @@ class MarkovCog(commands.Cog):
         message = f"{random_quote}\n> {quote_attrib} {timestamp}"
         await ctx.send(message)
 
-    @commands.command()
+    #@commands.command()
+    #@slash.slash(name="sqlexec",
+    #         description="queries")
+    
+    
+    @cog_ext.cog_slash(name="sqlexec")
     async def sqlexec(self, ctx, *, query: str):
         """lol"""
         try:
-            async with ctx.typing():
-                cursor = await self._conn.execute(query)
-                rows = await cursor.fetchall()
+            #async with ctx.typing():
+            cursor = await self._conn.execute(query)
+            rows = await cursor.fetchall()
         except sqlite3.OperationalError as e:
             await self.react_and_error(ctx, f"Error: {str(e)}")
             return
         message = "\n".join(str(row) for row in rows[:10])
         message = f"```\n{message}\n```"
-        await ctx.send(message)
-        await ctx.send(f"Query returned {len(rows)} rows")
+        left_emoji = "⬅️"
+        right_emoji = "➡️"
+        action_row = create_actionrow(create_button(style=ButtonStyle.gray, emoji=left_emoji,custom_id="left"),
+        create_button(style=ButtonStyle.gray, emoji=right_emoji,custom_id="right"))
+        
+        msg = await ctx.send(message,components=[action_row])
+        #await ctx.send(f"Query returned {len(rows)} rows")
+        counter = 0
+        maxrows = len(rows)//10
+        while True:
+            try:
+                button_ctx = await wait_for_component(self.bot, components=action_row,timeout=10)
+            except asyncio.TimeoutError as e:
+                await msg.edit(components=None)
+                break
+            if button_ctx.custom_id == "left":
+                counter = max(0,counter-1)
+            elif button_ctx.custom_id == "right":
+                counter = min(maxrows,counter+1)
+            message = "\n".join(str(row) for row in rows[counter*10:counter*10+10])
+            message = f"```\n{message}\n```"
+            await button_ctx.edit_origin(content=message)
 
-
+def setup(bot):
+    bot.add_cog(MarkovCog(bot))
 def main():
     os.makedirs("models", exist_ok=True)
     parser = argparse.ArgumentParser()
@@ -334,9 +363,11 @@ def main():
     config = configparser.ConfigParser()
     config.read(args.config)
     token = util.try_config(config, "MAIN", "Token")
-
+    global slash
     bot = commands.Bot(command_prefix="$")
-    bot.add_cog(MarkovCog(bot))
+    slash = SlashCommand(bot, sync_commands=True,override_type=True,sync_on_cog_reload=True)
+    bot.load_extension("lolmarkov")
+    #bot.add_cog(MarkovCog(bot))
     bot.run(token)
 
 
