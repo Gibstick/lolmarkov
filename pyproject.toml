@@ -1,0 +1,46 @@
+[tool.poetry]
+name = "lolmarkov"
+version = "0.1.0"
+description = ""
+authors = ["Charlie Wang <charliewang@fastmail.com>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+"discord.py" = "^1.7.3"
+aiosqlite = "^0.17.0"
+markovify = "^0.9.3"
+psutil = "^5.8.0"
+discord-py-slash-command = "^3.0.1"
+
+[tool.poetry.dev-dependencies]
+black = "^21.6b0"
+flake8 = "^3.9.2"
+mypy = "^0.910"
+isort = "^5.9.1"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+target-version = ['py38']
+include = '\.pyi?$'
+exclude = '''
+
+(
+  /(
+      \.eggs         # exclude a few common directories in the
+    | \.git          # root of the project
+    | \.mypy_cache
+    | \.venv
+    | _build
+    | build
+    | dist
+  )/
+)
+'''
+
+[tool.isort]
+profile = "black"
+

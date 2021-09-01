@@ -3,3 +3,6 @@ config_lolmarkov.ini
 *.sqlite3
 *.sqlite3-journal
 __pycache__/
+*.sqlite3
+models/
+.vscode
