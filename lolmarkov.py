@@ -27,7 +27,7 @@ from discord_slash import SlashCommand
 import util
 
 DuckUser = namedtuple("DuckUser", ["id", "name", "discriminator"])
-slash = None
+
 class SentenceText(markovify.Text):
     """Like markovify.Text, but a list of Iterable of sentences can be passed in."""
 
@@ -274,7 +274,7 @@ class MarkovCog(commands.Cog):
             logging.exception("Unknown exception in get_sentence():")
             return await self.react_and_error(ctx, "Unknown error.")
 
-    @commands.command()
+    @cog_ext.cog_slash(name="memory")
     async def memory(self, ctx):
         available_mb = psutil.virtual_memory().available / 1024 / 1024  # MiB
         await ctx.send(f"Memory available: {available_mb} MiB")
@@ -345,7 +345,12 @@ class MarkovCog(commands.Cog):
                 counter = max(0,counter-1)
             elif button_ctx.custom_id == "right":
                 counter = min(maxrows,counter+1)
-            message = "\n".join(str(row) for row in rows[counter*10:counter*10+10])
+            rowslice = rows[counter*10:counter*10+10]
+
+            if len(rowslice)==0:
+                counter = counter - 1
+                rowslice = rows[counter*10:counter*10+10]
+            message = "\n".join(str(row) for row in rowslice)
             message = f"```\n{message}\n```"
             await button_ctx.edit_origin(content=message)
 
@@ -363,7 +368,6 @@ def main():
     config = configparser.ConfigParser()
     config.read(args.config)
     token = util.try_config(config, "MAIN", "Token")
-    global slash
     bot = commands.Bot(command_prefix="$")
     slash = SlashCommand(bot, sync_commands=True,override_type=True,sync_on_cog_reload=True)
     bot.load_extension("lolmarkov")
