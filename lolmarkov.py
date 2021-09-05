@@ -11,7 +11,7 @@ import sqlite3
 import traceback
 from collections import namedtuple
 from datetime import datetime
-from typing import Iterable, List
+from typing import Iterable, Union
 
 import aiosqlite
 import discord
@@ -30,7 +30,6 @@ from discord_slash.utils.manage_components import (
 import util
 
 DuckUser = namedtuple("DuckUser", ["id", "name", "discriminator"])
-guild_ids: List[int] = []
 
 
 class SentenceText(markovify.Text):
@@ -176,7 +175,6 @@ class MarkovCog(commands.Cog):
     @cog_ext.cog_slash(
         name="switch",
         description="Switch to a model for a different user.",
-        guild_ids=guild_ids,
         options=[
             create_option(
                 name="arg",
@@ -186,12 +184,13 @@ class MarkovCog(commands.Cog):
             )
         ],
     )
-    async def switch(self, ctx, *, arg: discord.abc.User):
+    async def switch(self, ctx, arg: Union[discord.abc.User, int]):
         """Switch to a model for a different user."""
-        # Due to the complicated fallback logic and the shared database
-        # connection, we convert the argmuent manually.
+        if type(arg) is int:
+            member = await database_user(self._conn, arg)
+        else:
+            member = arg
 
-        member = arg
         new_model = await self.create_model(member.id, self._conn)
 
         if new_model is None:
@@ -245,7 +244,6 @@ class MarkovCog(commands.Cog):
     @cog_ext.cog_slash(
         name="talk",
         description="Talk command with optional start parameter.",
-        guild_ids=guild_ids,
         options=[
             create_option(
                 name="start",
@@ -262,7 +260,6 @@ class MarkovCog(commands.Cog):
     @cog_ext.cog_slash(
         name="talkuwu",
         description="Like talk, but with uwu.",
-        guild_ids=guild_ids,
         options=[
             create_option(
                 name="start",
@@ -314,7 +311,7 @@ class MarkovCog(commands.Cog):
             logging.exception("Unknown exception in get_sentence():")
             return await self.react_and_error(ctx, "Unknown error.")
 
-    @cog_ext.cog_slash(name="memory", guild_ids=guild_ids)
+    @cog_ext.cog_slash(name="memory")
     async def memory(self, ctx):
         available_mb = psutil.virtual_memory().available / 1024 / 1024  # MiB
         await ctx.send(f"Memory available: {available_mb} MiB")
@@ -322,7 +319,6 @@ class MarkovCog(commands.Cog):
     @cog_ext.cog_slash(
         name="quote",
         description="Grab a random quote from target, optionally containing keyword.",
-        guild_ids=guild_ids,
         options=[
             create_option(
                 name="target",
@@ -332,31 +328,30 @@ class MarkovCog(commands.Cog):
             ),
             create_option(
                 name="keyword",
-                description="keyword argument",
+                description="keyword to search in quote",
                 option_type=SlashCommandOptionType.STRING,
                 required=False,
             ),
         ],
     )
-    async def quote(self, ctx, target: discord.abc.User, *, keyword: str = ""):
+    async def quote(self, ctx, target: Union[discord.abc.User, int], keyword: str = ""):
         """Grab a random quote from target, optionally containing keyword."""
-        member = target
-        author_id = member.id
-        if keyword != "":
-            patterns = (f"%{keyword}%", f"{keyword} %", f"% {keyword}")
-            query = (
-                "SELECT clean_content, timestamp FROM messages WHERE author_id == ?\n"
-                "AND (clean_content LIKE ? OR clean_content LIKE ? OR clean_content LIKE ?)\n"
-                "ORDER BY RANDOM() LIMIT 1"
-            )
-            cursor = await self._conn.execute(query, (author_id,) + patterns)
+        if type(target) is int:
+            member = await database_user(self._conn, target)
         else:
-            query = (
-                "SELECT clean_content, timestamp FROM messages WHERE author_id == ?\n"
-                "ORDER BY RANDOM() LIMIT 1"
-            )
-            cursor = await self._conn.execute(query, (author_id,))
-
+            member = target
+        author_id = member.id
+        patterns = (
+            (f"%{keyword}%", f"{keyword} %", f"% {keyword}")
+            if keyword
+            else ("%", "%", "%")
+        )
+        query = """
+            SELECT clean_content, timestamp FROM messages WHERE author_id == ?
+            AND (clean_content LIKE ? OR clean_content LIKE ? OR clean_content LIKE ?)
+            ORDER BY RANDOM() LIMIT 1
+        """
+        cursor = await self._conn.execute(query, (author_id,) + patterns)
         row = await cursor.fetchone()
         if not row:
             await self.react_and_error(ctx, "No matching quote found")
@@ -372,7 +367,6 @@ class MarkovCog(commands.Cog):
     @cog_ext.cog_slash(
         name="sqlexec",
         description="Queries database",
-        guild_ids=guild_ids,
         options=[
             create_option(
                 name="query",
@@ -382,7 +376,7 @@ class MarkovCog(commands.Cog):
             )
         ],
     )
-    async def sqlexec(self, ctx, *, query: str):
+    async def sqlexec(self, ctx, query: str):
         """lol"""
         try:
             cursor = await self._conn.execute(query)
@@ -400,7 +394,6 @@ class MarkovCog(commands.Cog):
         )
 
         msg = await ctx.send(message, components=[action_row])
-        # await ctx.send(f"Query returned {len(rows)} rows")
         counter = 0
         maxrows = len(rows) // 10
         while True:
@@ -424,9 +417,12 @@ class MarkovCog(commands.Cog):
             message = f"```\n{message}\n```"
             await button_ctx.edit_origin(content=message)
 
-
-def setup(bot):
-    bot.add_cog(MarkovCog(bot))
+    @cog_ext.cog_slash(
+        name="ping",
+        description="Pong",
+    )
+    async def ping(self, ctx):
+        await ctx.send("🏓 Pong")
 
 
 def main():
@@ -440,11 +436,19 @@ def main():
     config = configparser.ConfigParser()
     config.read(args.config)
     token = util.try_config(config, "MAIN", "Token")
+    debug_guild_id = config["MAIN"].get("DebugGuildId")
+
+    if debug_guild_id:
+        print(f"Using guild commands in guild {debug_guild_id}")
+
     bot = commands.Bot(command_prefix="$")
-    slash = SlashCommand(
-        bot, sync_commands=True, override_type=True, sync_on_cog_reload=True
+    slash = SlashCommand(  # noqa: F841 needed for side effects
+        bot,
+        sync_commands=True,
+        sync_on_cog_reload=True,
+        debug_guild=debug_guild_id,
     )
-    bot.load_extension("lolmarkov")
+    bot.add_cog(MarkovCog(bot))
     bot.run(token)
 
 
