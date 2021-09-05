@@ -19,15 +19,14 @@ import discord
 import markovify
 import psutil
 from discord.ext import commands
-from discord_slash.utils.manage_components import create_button, create_actionrow
-from discord_slash.model import ButtonStyle
-from discord_slash.utils.manage_components import wait_for_component
-from discord_slash import cog_ext
-from discord_slash import SlashCommand
+from discord_slash.utils.manage_components import create_button, create_actionrow,wait_for_component
+from discord_slash.model import ButtonStyle,SlashCommandOptionType
+from discord_slash import cog_ext,SlashCommand
+from discord_slash.utils.manage_commands import create_option
 import util
 
 DuckUser = namedtuple("DuckUser", ["id", "name", "discriminator"])
-
+guild_ids = [867979889477824512]
 class SentenceText(markovify.Text):
     """Like markovify.Text, but a list of Iterable of sentences can be passed in."""
 
@@ -84,7 +83,6 @@ class MarkovCog(commands.Cog):
         self._conn = None  # initialized in on_ready
         self._model = None
         self._model_attrib = None
-        self._user_converter = commands.UserConverter()
         self._pool = concurrent.futures.ProcessPoolExecutor()
 
     @commands.Cog.listener()
@@ -159,23 +157,21 @@ class MarkovCog(commands.Cog):
 
         return model
 
-    async def user_lookup(self, ctx, arg):
-        try:
-            member = await self._user_converter.convert(ctx, arg)
-        except commands.CommandError:
-            member = await database_user(self._conn, arg)
 
-        return member
-
-    @commands.command()
+    @cog_ext.cog_slash(name="switch",
+        description="Switch to a model for a different user.",
+        guild_ids=guild_ids,
+        options = [create_option(name="arg",description="Name of user",
+            option_type=SlashCommandOptionType.USER,
+            required=True)])
     async def switch(self, ctx, *, arg: str):
         """Switch to a model for a different user."""
         # Due to the complicated fallback logic and the shared database
         # connection, we convert the argmuent manually.
-        member = await self.user_lookup(ctx, arg)
 
-        async with ctx.typing():
-            new_model = await self.create_model(member.id, self._conn)
+        member = arg
+        #async with ctx.typing():
+        new_model = await self.create_model(member.id, self._conn)
 
         if new_model is None:
             await ctx.send(f"Not enough data for user {member.name}")
@@ -224,20 +220,30 @@ class MarkovCog(commands.Cog):
 
         return sentence
 
-    @commands.command()
+    @cog_ext.cog_slash(name="talk",
+        description="Talk command with optional start parameter.",
+        guild_ids=guild_ids,
+        options = [create_option(name="start",description="Starting keyword",
+            option_type=SlashCommandOptionType.STRING,
+            required=False)])
     async def talk(self, ctx, *, start: str = None):
         """Talk command with optional start parameter."""
         await self.talk_impl(ctx, uwu=False, start=start)
 
-    @commands.command()
+    @cog_ext.cog_slash(name="talkuwu",
+        description="Like talk, but with uwu.",
+        guild_ids=guild_ids,
+        options = [create_option(name="start",description="Starting keyword",
+            option_type=SlashCommandOptionType.STRING,
+            required=False)])
     async def talkuwu(self, ctx, *, start: str = None):
         """Like talk, but with uwu."""
         await self.talk_impl(ctx, uwu=True, start=start)
 
-    async def react_and_error(self, ctx, message, reaction="❌",
+    async def react_and_error(self, ctx, message,
                               delete_after=8):
-        """React to the command with an "X" and print a temporary error message."""
-        await ctx.message.add_reaction(reaction)
+        """print a temporary error message."""
+        #await ctx.message.add_reaction(reaction)
         await ctx.send(message, delete_after=delete_after)
 
     async def talk_impl(self, ctx, uwu=False, start=None):
@@ -248,18 +254,18 @@ class MarkovCog(commands.Cog):
                                                   "No active model.",
                                                   delete_after=None)
 
-            async with ctx.typing():
-                try:
-                    sentence = await self.get_sentence(start)
-                except KeyError:
-                    return await self.react_and_error(
-                        ctx, f"{start} not found in data set.")
-                except markovify.text.ParamError:
-                    # TODO: Don't hardcode the number of words here.
-                    return await self.react_and_error(
-                        ctx,
-                        "At most two words can be used for the start of a sentence."
-                    )
+#            async with ctx.typing():
+            try:
+                sentence = await self.get_sentence(start)
+            except KeyError:
+                return await self.react_and_error(
+                    ctx, f"{start} not found in data set.")
+            except markovify.text.ParamError:
+                # TODO: Don't hardcode the number of words here.
+                return await self.react_and_error(
+                    ctx,
+                    "At most two words can be used for the start of a sentence."
+                )
 
             if sentence:
                 if uwu:
@@ -268,36 +274,44 @@ class MarkovCog(commands.Cog):
             else:
                 await self.react_and_error(
                     ctx,
-                    "Gave up after too many failures (too much similarity).",
-                    "⏲")
+                    "Gave up after too many failures (too much similarity).")
         except:
             logging.exception("Unknown exception in get_sentence():")
             return await self.react_and_error(ctx, "Unknown error.")
 
-    @cog_ext.cog_slash(name="memory")
+    @cog_ext.cog_slash(name="memory",guild_ids=guild_ids)
     async def memory(self, ctx):
         available_mb = psutil.virtual_memory().available / 1024 / 1024  # MiB
         await ctx.send(f"Memory available: {available_mb} MiB")
 
-    @commands.command()
+    @cog_ext.cog_slash(name="quote",
+        description="Grab a random quote from target, optionally containing keyword.",
+        guild_ids=guild_ids,
+        options = [create_option(name="target",description="name of user",
+            option_type=SlashCommandOptionType.USER,
+            required=True),
+        create_option(name="keyword",description = "keyword argument",
+            option_type=SlashCommandOptionType.STRING,
+            required=False)])
     async def quote(self, ctx, target: str, *, keyword: str = ""):
         """Grab a random quote from target, optionally containing keyword."""
-        try:
-            member = await self.user_lookup(ctx, target)
-        except commands.CommandError:
-            await self.react_and_error(ctx, f"User {target} found")
-            return
-
+        member = target
         author_id = member.id
+        if keyword!="":
+            patterns = (f"%{keyword}%", f"{keyword} %", f"% {keyword}")
+            query = (
+                "SELECT clean_content, timestamp FROM messages WHERE author_id == ?\n"
+                "AND (clean_content LIKE ? OR clean_content LIKE ? OR clean_content LIKE ?)\n"
+                "ORDER BY RANDOM() LIMIT 1")
+            cursor = await self._conn.execute(query, (author_id, ) + patterns)
+        else:
+            query = (
+                "SELECT clean_content, timestamp FROM messages WHERE author_id == ?\n"
+                "ORDER BY RANDOM() LIMIT 1")
+            cursor = await self._conn.execute(query, (author_id,))
 
-        patterns = (f"% {keyword} %", f"{keyword} %", f"% {keyword}")
-        query = (
-            "SELECT clean_content, timestamp FROM messages WHERE author_id is ?\n"
-            "AND (clean_content LIKE ? OR clean_content LIKE ? OR clean_content LIKE ?)\n"
-            "ORDER BY RANDOM() LIMIT 1")
-        cursor = await self._conn.execute(query, (author_id, ) + patterns)
+
         row = await cursor.fetchone()
-
         if not row:
             await self.react_and_error(ctx, "No matching quote found")
             return
@@ -309,16 +323,16 @@ class MarkovCog(commands.Cog):
         message = f"{random_quote}\n> {quote_attrib} {timestamp}"
         await ctx.send(message)
 
-    #@commands.command()
-    #@slash.slash(name="sqlexec",
-    #         description="queries")
-    
-    
-    @cog_ext.cog_slash(name="sqlexec")
+    @cog_ext.cog_slash(name="sqlexec",
+        description = "Queries database",
+        guild_ids=guild_ids,
+        options=[
+        create_option(name="query",description = "SQL query",
+            option_type=SlashCommandOptionType.STRING,
+            required=True)])
     async def sqlexec(self, ctx, *, query: str):
         """lol"""
         try:
-            #async with ctx.typing():
             cursor = await self._conn.execute(query)
             rows = await cursor.fetchall()
         except sqlite3.OperationalError as e:
@@ -371,7 +385,6 @@ def main():
     bot = commands.Bot(command_prefix="$")
     slash = SlashCommand(bot, sync_commands=True,override_type=True,sync_on_cog_reload=True)
     bot.load_extension("lolmarkov")
-    #bot.add_cog(MarkovCog(bot))
     bot.run(token)
 
 
