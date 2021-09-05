@@ -26,7 +26,7 @@ from discord_slash.utils.manage_commands import create_option
 import util
 
 DuckUser = namedtuple("DuckUser", ["id", "name", "discriminator"])
-guild_ids = [867979889477824512]
+guild_ids = []
 class SentenceText(markovify.Text):
     """Like markovify.Text, but a list of Iterable of sentences can be passed in."""
 
