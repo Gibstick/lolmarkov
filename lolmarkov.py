@@ -12,6 +12,7 @@ import traceback
 from collections import namedtuple
 from datetime import datetime
 from typing import Iterable, Union
+from uuid import uuid4
 
 import aiosqlite
 import discord
@@ -19,6 +20,7 @@ import markovify
 import psutil
 from discord.ext import commands
 from discord_slash import SlashCommand, cog_ext
+from discord_slash.context import SlashContext
 from discord_slash.model import ButtonStyle, SlashCommandOptionType
 from discord_slash.utils.manage_commands import create_option
 from discord_slash.utils.manage_components import (
@@ -29,7 +31,26 @@ from discord_slash.utils.manage_components import (
 
 import util
 
+MAX_MESSAGE_LEN = 1950
+MAX_QUERY_ROWS = 500
+
 DuckUser = namedtuple("DuckUser", ["id", "name", "discriminator"])
+
+
+def format_sqlexec(result_rows, maxlen):
+    """
+    Format rows of a SQL query as a discord message, adhering to a maximum
+    length.
+
+    If the message needs to be truncated, a (truncated) note will be added.
+    """
+    codeblock = "\n".join(str(row) for row in result_rows)
+    message = f"```\n{codeblock}```"
+    if len(message) < maxlen:
+        return message
+    else:
+        note = "(truncated)"
+        return f"```\n{codeblock[:maxlen - len(note)]}```{note}"
 
 
 class SentenceText(markovify.Text):
@@ -376,46 +397,57 @@ class MarkovCog(commands.Cog):
             )
         ],
     )
-    async def sqlexec(self, ctx, query: str):
+    async def sqlexec(self, ctx: SlashContext, query: str):
         """lol"""
         try:
             cursor = await self._conn.execute(query)
-            rows = await cursor.fetchall()
+            rows = await cursor.fetchmany(size=MAX_QUERY_ROWS)
         except sqlite3.OperationalError as e:
             await self.react_and_error(ctx, f"Error: {str(e)}")
             return
-        message = "\n".join(str(row) for row in rows[:10])
-        message = f"```\n{message}\n```"
-        left_emoji = "⬅️"
-        right_emoji = "➡️"
+        left_emoji, left_id = "⬅️", uuid4().hex
+        right_emoji, right_id = "➡️", uuid4().hex
         action_row = create_actionrow(
-            create_button(style=ButtonStyle.gray, emoji=left_emoji, custom_id="left"),
-            create_button(style=ButtonStyle.gray, emoji=right_emoji, custom_id="right"),
+            create_button(
+                style=ButtonStyle.gray,
+                emoji=left_emoji,
+                custom_id=left_id,
+            ),
+            create_button(
+                style=ButtonStyle.gray,
+                emoji=right_emoji,
+                custom_id=right_id,
+            ),
         )
+        msg = await ctx.send("...", components=[action_row])
 
-        msg = await ctx.send(message, components=[action_row])
-        counter = 0
-        maxrows = len(rows) // 10
+        if not rows:
+            await msg.edit(content="No results.", components=None)
+            return
+
+        base = 0
+        upper = (len(rows) - 1) // 10
+        edit_fn = msg.edit
+        # on the first iteration, we have no interaction context to respond to
+        # so we edit the main message
+
         while True:
+            rowslice = rows[base * 10 : base * 10 + 10]
+            message = format_sqlexec(rowslice, MAX_MESSAGE_LEN)
+            await edit_fn(content=message)
+
             try:
                 button_ctx = await wait_for_component(
                     self.bot, components=action_row, timeout=10
                 )
+                edit_fn = button_ctx.edit_origin
             except asyncio.TimeoutError:
                 await msg.edit(components=None)
                 break
-            if button_ctx.custom_id == "left":
-                counter = max(0, counter - 1)
-            elif button_ctx.custom_id == "right":
-                counter = min(maxrows, counter + 1)
-            rowslice = rows[counter * 10 : counter * 10 + 10]
-
-            if len(rowslice) == 0:
-                counter = counter - 1
-                rowslice = rows[counter * 10 : counter * 10 + 10]
-            message = "\n".join(str(row) for row in rowslice)
-            message = f"```\n{message}\n```"
-            await button_ctx.edit_origin(content=message)
+            if button_ctx.custom_id == left_id:
+                base = max(0, base - 1)
+            elif button_ctx.custom_id == right_id:
+                base = min(upper, base + 1)
 
     @cog_ext.cog_slash(
         name="ping",
