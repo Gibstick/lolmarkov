@@ -31,7 +31,7 @@ from discord_slash.utils.manage_components import (
 
 import util
 
-MAX_MESSAGE_LEN = 1950
+MAX_MESSAGE_LEN = 1900
 MAX_QUERY_ROWS = 500
 
 DuckUser = namedtuple("DuckUser", ["id", "name", "discriminator"])
