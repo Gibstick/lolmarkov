@@ -399,6 +399,7 @@ class MarkovCog(commands.Cog):
     )
     async def sqlexec(self, ctx: SlashContext, query: str):
         """lol"""
+        await ctx.defer()
         try:
             cursor = await self._conn.execute(query)
             rows = await cursor.fetchmany(size=MAX_QUERY_ROWS)
