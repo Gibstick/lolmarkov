@@ -37,7 +37,7 @@ MAX_QUERY_ROWS = 500
 DuckUser = namedtuple("DuckUser", ["id", "name", "discriminator"])
 
 
-def format_sqlexec(result_rows, maxlen):
+def format_sqlexec(columns,result_rows, maxlen):
     """
     Format rows of a SQL query as a discord message, adhering to a maximum
     length.
@@ -45,12 +45,12 @@ def format_sqlexec(result_rows, maxlen):
     If the message needs to be truncated, a (truncated) note will be added.
     """
     codeblock = "\n".join(str(row) for row in result_rows)
-    message = f"```\n{codeblock}```"
+    message = f"```\n{columns}\n{codeblock}```"
     if len(message) < maxlen:
         return message
     else:
         note = "(truncated)"
-        return f"```\n{codeblock[:maxlen - len(note)]}```{note}"
+        return f"```\n{codeblock[:maxlen - len(note)-len(columns)]}```{note}"
 
 
 class SentenceText(markovify.Text):
@@ -434,7 +434,8 @@ class MarkovCog(commands.Cog):
 
         while True:
             rowslice = rows[base * 10 : base * 10 + 10]
-            message = format_sqlexec(rowslice, MAX_MESSAGE_LEN)
+            cols = tuple([(element[0]) for element in cursor.description])
+            message = format_sqlexec(cols,rowslice, MAX_MESSAGE_LEN)
             await edit_fn(content=message)
 
             try:
